@@ -3,3 +3,4 @@ noisereduce
 librosa
 soundfile
 pydub
+ffmpeg-python
