@@ -3,4 +3,3 @@ noisereduce
 librosa
 soundfile
 pydub
-spleeter
