@@ -1,63 +1,33 @@
 import streamlit as st
-import noisereduce as nr
-import librosa
-import soundfile as sf
+import torch
+from df.enhance import enhance, init_df, load_audio, save_audio
 import tempfile
-from pydub import AudioSegment
-from pydub.utils import which
 import os
-import subprocess
 
-# ---------------------------
-# Ensure ffmpeg & ffprobe exist (for Streamlit Cloud)
-# ---------------------------
-if which("ffmpeg") is None or which("ffprobe") is None:
-    try:
-        st.info("Installing ffmpeg (first run only)... please wait ⏳")
-        subprocess.run(["apt-get", "update"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subprocess.run(["apt-get", "install", "-y", "ffmpeg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except Exception as e:
-        st.error(f"FFmpeg install failed: {e}")
+# Initialize DeepFilterNet model
+model, df_state, _ = init_df()
 
-# Set ffmpeg path for pydub
-AudioSegment.converter = which("ffmpeg")
-AudioSegment.ffprobe = which("ffprobe")
+st.set_page_config(page_title="🎧 AI Noise Reducer", layout="centered")
+st.title("🎧 AI-Powered Noise Reduction")
+st.markdown("Upload a WAV file and remove background noise instantly.")
 
-# ---------------------------
-# Streamlit App UI
-# ---------------------------
-st.set_page_config(page_title="🎧 Noise Reducer", layout="centered")
-
-st.title("🎧 Noise Reduction App")
-st.markdown("Upload an audio file to automatically remove background noise.")
-
-uploaded_file = st.file_uploader("Upload your audio file", type=["wav", "mp3"])
+uploaded_file = st.file_uploader("Choose an audio file", type=["wav"])
 
 if uploaded_file is not None:
-    with st.spinner("Processing your audio... please wait ⏳"):
-        try:
-            # Save uploaded file temporarily
-            temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            audio = AudioSegment.from_file(uploaded_file)
-            audio.export(temp_input.name, format="wav")
+    with st.spinner("Processing your audio... ⏳"):
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_file_path = tmp_file.name
 
-            # Load and reduce noise
-            y, sr = librosa.load(temp_input.name, sr=None)
-            noise_sample = y[0:int(sr * 1)]  # first 1 sec = noise profile
-            reduced = nr.reduce_noise(y=y, y_noise=noise_sample, sr=sr)
+        # Load and enhance
+        audio, _ = load_audio(tmp_file_path, sr=df_state.sr())
+        enhanced_audio = enhance(model, df_state, audio)
 
-            # Save cleaned output
-            temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            sf.write(temp_output.name, reduced, sr)
+        # Save output
+        enhanced_file_path = os.path.join(tempfile.gettempdir(), "enhanced_audio.wav")
+        save_audio(enhanced_file_path, enhanced_audio, df_state.sr())
 
-            st.success("✅ Done! Listen below:")
-            st.audio(temp_output.name)
-            st.download_button(
-                "⬇️ Download Cleaned Audio",
-                open(temp_output.name, "rb"),
-                file_name="cleaned_audio.wav",
-            )
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-            st.info("Tip: Try uploading a WAV file if MP3 fails.")
+        st.success("✅ Done! Listen & download below:")
+        st.audio(enhanced_file_path, format="audio/wav")
+        st.download_button("⬇️ Download Enhanced Audio", enhanced_file_path)
