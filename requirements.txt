@@ -1,6 +1,4 @@
 streamlit
-noisereduce
-librosa
-soundfile
-pydub
-ffmpeg-python
+torch
+torchaudio
+deepfilternet
